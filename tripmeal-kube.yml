@@ -1,0 +1,114 @@
+# 1. SERVICE WEB
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tripmeal
+      service: web
+  template:
+    metadata:
+      labels:
+        app: tripmeal
+        service: web
+    spec:
+      containers:
+      - name: web
+        image: saaddak77/tripmeal-web:v1
+        ports:
+        - containerPort: 5000
+        envFrom:
+        - configMapRef:
+            name: tripmeal-config
+        env:
+        - name: DATABASE_USER
+          valueFrom:
+            secretKeyRef:
+              name: tripmeal-secret
+              key: db-user
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tripmeal-secret
+              key: db-pwd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 8081
+    targetPort: 5000
+    protocol: TCP
+  selector:
+    app: tripmeal
+    service: web
+
+---
+# 2. SERVICE DATABASE 
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+spec:
+  serviceName: "db"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tripmeal
+      service: db
+  template:
+    metadata:
+      labels:
+        app: tripmeal
+        service: db
+    spec:
+      containers:
+      - name: db
+        image: saaddak77/tripmeal-db:v1
+        ports:
+        - containerPort: 3306
+        envFrom:
+        - configMapRef:
+            name: tripmeal-config
+        env:
+        - name: DATABASE_USER
+          valueFrom:
+            secretKeyRef:
+              name: tripmeal-secret
+              key: db-user
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tripmeal-secret
+              key: db-pwd
+        volumeMounts:
+        - name: db-data
+          mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+  - metadata:
+      name: db-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 100Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3306
+    targetPort: 3306
+  selector:
+    app: tripmeal
+    service: db

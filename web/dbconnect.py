@@ -1,4 +1,4 @@
-import MySQLdb
+import pymysql
 try:
     import urlparse
 except ModuleNotFoundError:
@@ -11,32 +11,28 @@ try:
     if 'DATABASES' not in locals():
         DATABASES = {}
 
-    if 'DATABASE_URL' in os.environ:
-        url = urlparse.urlparse(os.environ['DATABASE_URL'])
+    # Ensure default database exists.
+    DATABASES['default'] = DATABASES.get('default', {})
 
-        # Ensure default database exists.
-        DATABASES['default'] = DATABASES.get('default', {})
+    # Update with environment configuration.
+    DATABASES['default'].update({
+        'NAME': os.environ['DATABASE_NAME'],
+        'USER': os.environ['DATABASE_USER'],
+        'PASSWORD': os.environ['MYSQL_ROOT_PASSWORD'],
+        'HOST': os.environ['DATABASE_HOST'],
+        'PORT': os.environ['DATABASE_PORT'],
+        'ENGINE': 'django.db.backends.mysql'
+    })
 
-        # Update with environment configuration.
-        DATABASES['default'].update({
-            'NAME': url.path[1:],
-            'USER': url.username,
-            'PASSWORD': url.password,
-            'HOST': url.hostname,
-            'PORT': url.port,
-        })
-
-        if url.scheme == 'mysql':
-            DATABASES['default']['ENGINE'] = 'django.db.backends.mysql'
 except Exception:
     print('Unexpected error:', sys.exc_info())
 
 
 def connection():
-    conn = MySQLdb.connect(host=DATABASES['default']['HOST'],
+    conn = pymysql.connect(host=DATABASES['default']['HOST'],
                            user=DATABASES['default']['USER'],
-                           passwd=DATABASES['default']['PASSWORD'],
-                           db=DATABASES['default']['NAME']
+                           password=DATABASES['default']['PASSWORD'],
+                           database=DATABASES['default']['NAME']
                            )
     c = conn.cursor()
     return c, conn

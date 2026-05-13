@@ -1,31 +1,31 @@
-version: "3"
-
+# COMPLETE THIS FILE
 services:
-    web:
-        build: web
-        image: grosclara/trip-meal-web
-        env_file: .env
-        environment:
-            - DATABASE_URL=mysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/tripmealdb
-        networks:
-            - banana
-        ports:
-            - ${SERVER_PORT}:${SERVER_PORT}
-        depends_on:
-            - db
-    db: 
-        build: db  
-        image: grosclara/trip-meal-db
-        env_file: .env
-        expose: 
-            - 3306
-        networks:
-            - banana
-        volumes:
-            - db-data:/var/lib/mysql
+  web:
+    build: ./web
+    image: saaddak77/tripmeal-web:v1
+    ports:
+      - "3000:5000"
+    env_file:
+      - tripmeal.env
+    depends_on:
+      - db
+    networks:
+      - tripmeal_network
+    restart: unless-stopped
+
+  db:
+    build: ./database
+    image: saaddak77/tripmeal-db:v1
+    env_file:
+      - tripmeal.env
+    volumes:
+      - data_tripmeal:/var/lib/mysql
+    networks:
+      - tripmeal_network
+    restart: unless-stopped
 
 volumes:
-    db-data:
+  data_tripmeal:
 
 networks:
-    banana:
+  tripmeal_network:

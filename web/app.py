@@ -1,19 +1,18 @@
 from flask import Flask, render_template, flash, jsonify, request, url_for, \
                   redirect, session, g
 from dbconnect import connection
-from MySQLdb import escape_string
 from wtforms import Form, TextField, PasswordField, BooleanField, validators, TextAreaField, StringField, SelectField
 from passlib.hash import sha256_crypt
 from functools import wraps
 import random
 import gc
 import os
-
+import sys
 
 class RegistrationForm(Form):
     username = TextField('Username', [validators.Length(min=4, max=25)])
     email = TextField('Email address', [validators.Length(min=5, max=50)])
-    password = PasswordField('Password', [validators.Required(),
+    password = PasswordField('Password', [validators.DataRequired(),
                                           validators.EqualTo('confirm',
                                                              message='Passwords must match')])
     confirm = PasswordField('Repeat password')
@@ -111,11 +110,11 @@ def homepage():
 
 @app.route('/login/', methods=['GET', 'POST'])
 def login_page():
-    try:
-        error = None
-        c, conn = connection()
+    error = None
+    c, conn = connection()
+    try: 
         if request.method == 'POST':
-            username = escape_string(request.form['username']).decode()
+            username = conn.escape_string(request.form['username'])
             data = c.execute('SELECT * FROM users WHERE username = ("%s");' % username)
             data = c.fetchone()
             if sha256_crypt.verify(request.form['password'], data[2]) and (data[1] == username):
@@ -131,7 +130,7 @@ def login_page():
     except:
         error = 'Invalid credentials, try again'
         return render_template('login.html', error=error)
-
+    
 
 @app.route('/logout/')
 @login_required
@@ -145,34 +144,37 @@ def logout_page():
 @app.route('/register/', methods=['GET', 'POST'])
 def register_page():
     form = RegistrationForm(request.form)
-    try:
-        if request.method == 'POST' and form.validate():
-            username = form.username.data
-            email = form.email.data
-            password = sha256_crypt.encrypt(str(form.password.data))
+    
+    if request.method == 'POST' and form.validate():
+        username = form.username.data
+        email = form.email.data
+        password = sha256_crypt.hash(str(form.password.data))
 
-            c, conn = connection()
-            x = c.execute('SELECT * FROM users WHERE username = ("%s");' %
-                             escape_string(username))
-            if int(x) > 0:
-                flash('That username is already taken, please choose another')
-                return render_template('register.html', form=form)
-            else:
-                c.execute('INSERT INTO users (username, password, email) VALUES ("%s", "%s", "%s");' %
-                          (escape_string(username), escape_string(password), escape_string(email)))
-                conn.commit()
-                flash('Thanks for registering!')
-                c.close()
-                conn.close()
-                gc.collect()
+        c, conn = connection()
+        x = c.execute('SELECT * FROM users WHERE username = ("%s");' %
+                            conn.escape_string(username))
+        if int(x) > 0:
+            flash('That username is already taken, please choose another')
+            return render_template('register.html', form=form)
+        else:
+            c.execute('INSERT INTO users (username, password, email) VALUES ("%s", "%s", "%s");' %
+                        (conn.escape_string(username), conn.escape_string(password), conn.escape_string(email)))
+            conn.commit()
+            flash('Thanks for registering!')
+            c.close()
+            conn.close()
+            gc.collect()
 
-                session['logged_in'] = True
-                session['username'] = username
-                return redirect(url_for('favourites_page'))
-        return render_template('register.html', form=form)
+            session['logged_in'] = True
+            session['username'] = username
+            return redirect(url_for('favourites_page'))
+    return render_template('register.html', form=form)
+    '''
     except Exception as e:
+        print("Error!!!", file=sys.stderr)
+        print(e, file=sys.stderr)
         return render_template('register.html', form=form)
-
+    '''
 
 @app.route('/newrecipe/', methods=['GET', 'POST'])
 @login_required
@@ -186,12 +188,13 @@ def newrecipe():
 @app.route('/addrecipe/', methods=['POST', 'GET'])
 def addrecipe():
     if request.method == 'POST':
-        title = escape_string(request.form['title'])
-        location = escape_string(request.form['country'])
-        ingredients = escape_string(','.join(request.form['ingredients'].split('\r\n')).strip(','))
-        recipe = escape_string(request.form['recipe'])
-        username = session['username']
         c, conn = connection()
+        title = conn.escape_string(request.form['title'])
+        location = conn.escape_string(request.form['country'])
+        ingredients = conn.escape_string(','.join(request.form['ingredients'].split('\r\n')).strip(','))
+        recipe = conn.escape_string(request.form['recipe'])
+        username = session['username']
+        
 
         c.execute('INSERT INTO recipes (title, location, ingredients, recipe, user) VALUES ("%s", "%s", "%s", "%s", "%s");' %
                                        (title, location, ingredients, recipe, username))
@@ -231,7 +234,7 @@ def list_recipe():
         if request.method == 'GET':
             rid = request.args.get('rid')
             c, conn = connection()
-            _ = c.execute('SELECT * FROM recipes WHERE rid = %s;' % escape_string(rid))
+            _ = c.execute('SELECT * FROM recipes WHERE rid = %s;' % conn.escape_string(rid))
             recipe = list(c.fetchall()[0])
             recipe[6] = convert2HTML(recipe[6])
             c.close()
@@ -354,14 +357,16 @@ def menu_page():
                 days.pop(days.index(day))
                 menu_dict[day] = [rid, tmp[rid]]
 
-    for _ in range(7-n_favourites):
-        day = random.choice(days)
-        days.pop(days.index(day))
-        rid = random.choice(rids)
-        tmp = {rid: all_recipes[rid]}
-        menu_dict[day] = [rid, tmp[rid]]
-
-    return render_template('menu.html', menu=menu_dict)
+    list_recipes = list(rids)
+    if len(list_recipes) > 0:
+        for _ in range(7-n_favourites):
+            day = random.choice(days)
+            days.pop(days.index(day))
+            rid = random.choice(list_recipes)
+            tmp = {rid: all_recipes[rid]}
+            menu_dict[day] = [rid, tmp[rid]]
+            
+    return render_template('menu.html', menu=list(menu_dict.values()))
 
 
 @app.route('/user/')
@@ -417,10 +422,10 @@ def edit_recipe(rid):
     form.recipe.data = recipe[6]
 
     if request.method == 'POST':
-        title = escape_string(request.form['title'])
-        country = escape_string(request.form['country'])
-        ingredients = escape_string(','.join(request.form['ingredients'].split('\r\n')).strip(','))
-        recipe = escape_string(request.form['recipe'])
+        title = conn.escape_string(request.form['title'])
+        country = conn.escape_string(request.form['country'])
+        ingredients = conn.escape_string(','.join(request.form['ingredients'].split('\r\n')).strip(','))
+        recipe = conn.escape_string(request.form['recipe'])
 
         # Update the DB
         c, conn = connection()

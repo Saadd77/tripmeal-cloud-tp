@@ -1,31 +1,24 @@
-FROM python:2.7-alpine
+FROM python:3.7
 
-WORKDIR app
+WORKDIR /app
 
+# 1. Les dépendances : le plus long à construire, mais qui change rarement
 COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-RUN set -ex \
-    && apk add --no-cache --virtual .build-deps \
-            gcc \
-            make \
-            libc-dev \
-            musl-dev \
-            linux-headers \
-            pcre-dev \
-            python-dev \
-    && apk add --no-cache mariadb-dev \
-    && sed '/st_mysql_options options;/a unsigned int reconnect;' /usr/include/mysql/mysql.h -i.bkp \
-    && pip install -r requirements.txt \
-    && runDeps="$( \
-            scanelf --needed --nobanner --recursive /venv \
-                    | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
-                    | sort -u \
-                    | xargs -r apk info --installed \
-                    | sort -u \
-    )" \
-    && apk add --virtual .python-rundeps $runDeps \
-    && apk del .build-deps
+# 2. Les assets statiques et la licence : changent peu souvent
+COPY LICENSE .
+COPY static/ ./static/
+COPY templates/ ./templates/
 
-COPY . .
+# 3. Le code (plus volatil)
+COPY *.py .
 
-ENTRYPOINT ["python","app.py"]
+# 4. Permissions pour éviter l'erreur d'exécution
+RUN chmod -x /app/app.py
+
+# 5. Configuration réseau du conteneur
+EXPOSE 5000
+
+# 6. Commande de démarrage par défaut
+CMD ["python", "app.py"]
